@@ -33,12 +33,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use join::Join;
+    use storage::{DenseVecStorage, NullStorage};
+    use world::{Component, World};
+
     #[test]
     fn basic_drain() {
-        use join::Join;
-        use storage::DenseVecStorage;
-        use world::{Component, World};
-
         #[derive(Debug, PartialEq)]
         struct Comp;
 
@@ -67,5 +67,40 @@ mod tests {
         }
 
         assert_eq!((&comps).join().count(), 0);
+    }
+
+    #[test]
+    fn selective_drain() {
+        #[derive(Debug, Default, PartialEq)]
+        struct Keep;
+        impl Component for Keep { type Storage = NullStorage<Self>; }
+
+        #[derive(Debug, Default, PartialEq)]
+        struct Delete;
+        impl Component for Delete { type Storage = NullStorage<Self>; }
+
+        fn consume(_: Delete) {}
+
+        let mut world = World::new();
+        world.register::<Keep>();
+        world.register::<Delete>();
+
+        let a = world.create_entity().with(Delete).with(Keep).build();
+        let b = world.create_entity().with(Delete).build();
+        let c = world.create_entity().with(Keep).build();
+
+        let mut del = world.write::<Delete>();
+        let keep = world.write::<Keep>();
+        let eid = world.entities();
+
+        for (del, _, eid) in (del.drain(), !&keep, &*eid).join() {
+            consume(del);
+            assert!(eid != a);
+            assert!(eid == b);
+            assert!(eid != c);
+        }
+
+        assert_eq!((&keep).join().count(), 2);
+        assert_eq!((&del).join().count(), 1);
     }
 }
